@@ -1,0 +1,117 @@
+# Go2 3D 导航系统参数配置
+
+# ── 3D 地图服务器 ──
+map_server:
+  ros__parameters:
+    pcd_path: "/home/w/C206Go2/src/FAST_LIO_ROS2/PCD/test.pcd"
+
+    # 体素化参数
+    voxel_resolution: 0.2         # 体素边长 (m)
+    min_points_per_voxel: 3       # 体素内最少点数才算有效
+    keypoint_resolution: 0.5      # 关键点降采样间距 (m)
+
+    # 图构建参数
+    connection_radius: 0.5        # 关键点最大连接半径 (m)
+    max_height_change: 0.2        # 相邻关键点最大允许高差 (m)
+    max_slope_angle: 45.0         # 相邻关键点最大允许坡度 (度)
+
+    # 地面高度范围
+    ground_z_min: 0.0             # 地面点最低 Z (m)，auto_ground_detect=true 时自动覆盖
+    ground_z_max: 0.5             # 地面点最高 Z (m)，auto_ground_detect=true 时自动覆盖
+    auto_ground_detect: true      # 自动检测地面高度（推荐）
+    ground_band_width: 0.5        # 地面带宽度 (m)
+    auto_calibrate: true          # 自动校准图参数（推荐）
+
+    # 话题
+    nav_graph_topic: "/nav_graph_cloud"
+    map_frame: "map"
+
+# ── FAST-LIO body odometry -> robot base_link odometry ──
+odometry_to_base_link:
+  ros__parameters:
+    input_odom_topic: "/Odometry"
+    output_odom_topic: "/Odometry_base_link"
+    body_frame: "body"
+    base_frame: "base_link"
+    tf_timeout: 0.2
+
+# ── 3D 路径规划器 ──
+path_planner:
+  ros__parameters:
+    odom_topic: "/Odometry_base_link"
+    planner_frequency: 1.0        # 规划频率 (Hz)
+    goal_tolerance: 0.3           # 到达目标的 3D 距离容差 (m)
+    smooth_iterations: 3          # 路径平滑迭代次数
+    graph_interp_points: 5        # 每段边的插值点数
+
+    # 图参数（必须与 map_server 一致）
+    connection_radius: 0.5
+    max_height_change: 0.2
+    max_slope_angle: 45.0
+
+# ── 3D 避障模块 ──
+obstacle_avoider:
+  ros__parameters:
+    cloud_topic: "/cloud_registered_body"
+    odom_topic: "/Odometry_base_link"
+    detection_range: 3.0          # 检测范围 (m)
+    danger_distance: 0.3          # 危险距离 (m)
+    warning_distance: 0.8         # 警告距离 (m)
+    fov_angle: 120.0              # 前方检测角度 (度)
+    max_linear_speed: 0.5         # 最大线速度 (m/s)
+    max_angular_speed: 1.0        # 最大角速度 (rad/s)
+
+    # 3D 高度过滤
+    height_band: 0.5              # 高度带上限（相对机器人 Z）(m)
+    ground_clearance: 0.05        # 地面间隙（忽略机器人以下的点）(m)
+    slope_threshold: 30.0         # 坡道判定阈值 (度)
+
+    input_cmd_vel_topic: "/cmd_vel_raw"
+    output_cmd_vel_topic: "/cmd_vel"
+
+# ── 3D 运动控制器 ──
+motion_controller:
+  ros__parameters:
+    look_ahead_distance: 0.5      # 前视距离 (m)
+    control_frequency: 10.0       # 控制频率 (Hz)
+    max_linear_speed: 0.5         # 最大线速度 (m/s)
+    max_angular_speed: 1.0        # 最大角速度 (rad/s)
+    max_acceleration: 0.5         # 最大加速度 (m/s²)
+    goal_tolerance: 0.2           # 到达目标 3D 距离容差 (m)
+
+    # 坡度调速
+    max_slope_angle: 30.0         # 坡度减速上限 (度)
+    slope_speed_factor: 0.5       # 坡度减速系数 (0-1)
+
+    odom_topic: "/Odometry_base_link"
+    cmd_vel_topic: "/cmd_vel_raw"
+
+# ── WebRTC Bridge（不变）──
+webrtc_bridge:
+  ros__parameters:
+    robot_ip: "192.168.12.1"
+    aes_key: "7b7ad05fae7b79f3c0135f7417f895d0"
+    cmd_vel_topic: "/cmd_vel"
+    max_linear_vel: 0.5
+    max_angular_vel: 1.0
+
+# ── 导航主节点（一体化模式，暂不改动）──
+navigation_node:
+  ros__parameters:
+    odom_topic: "/Odometry_base_link"
+    goal_topic: "/goal_pose"
+    cloud_topic: "/cloud_registered_body"
+    replan_distance: 1.0
+    replan_interval: 5.0
+    goal_tolerance: 0.2
+    planner_frequency: 2.0
+    smooth_iterations: 3
+    look_ahead_distance: 0.5
+    max_linear_speed: 0.5
+    max_angular_speed: 1.0
+    max_acceleration: 0.5
+    control_frequency: 10.0
+    detection_range: 3.0
+    danger_distance: 0.3
+    warning_distance: 0.8
+    fov_angle: 120.0

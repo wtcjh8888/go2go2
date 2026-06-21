@@ -1,0 +1,15 @@
+# Build artifacts
+build/
+install/
+log/
+
+# Claude Code local settings
+.claude/
+
+# Large binary files
+*.pcd
+
+# Python cache
+__pycache__/
+*.pyc
+*.egg-info/
