@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import PointCloud2
@@ -265,13 +266,18 @@ class ObstacleAvoider(Node):
         )
 
     def _on_cloud(self, msg: PointCloud2) -> None:
-        points = []
-        for p in point_cloud2.read_points(
-            msg, field_names=('x', 'y', 'z'), skip_nan=True
-        ):
-            points.append(p)
-        if points:
-            self._points = np.array(points, dtype=np.float32)
+        points = point_cloud2.read_points(
+            msg, field_names=('x', 'y', 'z'), skip_nans=True
+        )
+        arr = np.asarray(points)
+        if arr.size == 0:
+            return
+        if arr.dtype.names:
+            self._points = np.column_stack(
+                [arr['x'], arr['y'], arr['z']]
+            ).astype(np.float32)
+        else:
+            self._points = arr.reshape(-1, 3).astype(np.float32)
 
     def _on_odom(self, msg: Odometry) -> None:
         self._robot_z = msg.pose.pose.position.z
@@ -361,8 +367,9 @@ def main(args=None):
     node = ObstacleAvoider()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()

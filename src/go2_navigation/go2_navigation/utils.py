@@ -247,6 +247,8 @@ def build_nav_graph(
     connection_radius: float = 0.5,
     max_height_change: float = 0.2,
     max_slope_angle: float = 45.0,
+    keep_largest_component_only: bool = True,
+    min_component_size: int = 1,
 ) -> NavGraph:
     """构建 KD-tree 和邻接图。
 
@@ -309,9 +311,9 @@ def build_nav_graph(
 
     traversable = np.ones(len(keypoints), dtype=bool)
 
-    # 找最大连通分量，剔除孤立点和小分量
+    # 找连通分量，剔除孤立点和小分量
     visited = set()
-    largest_component: List[int] = []
+    components: List[List[int]] = []
     for i in range(len(keypoints)):
         if i in visited:
             continue
@@ -326,11 +328,17 @@ def build_nav_graph(
             for neighbor, _ in adjacency.get(node, []):
                 if neighbor not in visited:
                     stack.append(neighbor)
-        if len(component) > len(largest_component):
-            largest_component = component
+        components.append(component)
 
-    # 保留最大连通分量
-    keep_set = set(largest_component)
+    if keep_largest_component_only:
+        keep_components = [max(components, key=len)] if components else []
+    else:
+        min_size = max(1, int(min_component_size))
+        keep_components = [component for component in components if len(component) >= min_size]
+        if not keep_components and components:
+            keep_components = [max(components, key=len)]
+
+    keep_set = {idx for component in keep_components for idx in component}
     keep_mask = np.array([i in keep_set for i in range(len(keypoints))])
 
     if not np.all(keep_mask):

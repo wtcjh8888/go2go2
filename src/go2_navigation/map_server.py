@@ -349,8 +349,6 @@ class MapServer(Node):
             connection_radius,
             max_height_change,
             self.max_slope_angle,
-            keep_largest_component_only=False,
-            min_component_size=self.min_component_cells,
         )
 
     def _build_free_space_nav_graph(self, points: np.ndarray) -> NavGraph:

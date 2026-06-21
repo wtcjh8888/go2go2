@@ -122,6 +122,7 @@ def generate_launch_description():
             executable='rviz2',
             name='rviz2',
             condition=IfCondition(LaunchConfiguration('rviz')),
+            arguments=['-d', LaunchConfiguration('rviz_config')],
             output='screen',
         ),
     ])

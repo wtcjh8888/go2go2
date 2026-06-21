@@ -1,6 +1,6 @@
-"""3D 运动控制器：Pure Pursuit 路径跟踪 + 坡度调速 + 速度平滑。
+"""平面运动控制器：在 3D 地图路径上执行 XY Pure Pursuit 路径跟踪。
 
-订阅 /planned_path 和 /Odometry，发布 /cmd_vel 给避障模块。
+订阅 /planned_path 和补偿后的 base_link Odometry，发布 /cmd_vel_raw 给避障模块。
 """
 
 import math
@@ -35,6 +35,8 @@ def pure_pursuit_control(
     target_z: float,
     max_lin: float = 0.2,
     max_ang: float = 0.5,
+    min_lin: float = 0.0,
+    min_ang: float = 0.0,
     max_slope_angle: float = 30.0,
     slope_speed_factor: float = 0.5,
 ) -> Tuple[float, float]:
@@ -64,6 +66,8 @@ def pure_pursuit_control(
     angle_to_target = math.atan2(local_y, local_x)
     angle_factor = max(0.0, math.cos(angle_to_target))
     vx = max_lin * angle_factor
+    if vx > 1e-6 and vx < min_lin:
+        vx = min(min_lin, max_lin)
 
     # 坡度减速
     if dist > 0.01:
@@ -74,7 +78,10 @@ def pure_pursuit_control(
         vx *= max(0.3, slope_scale)  # 最低保留 30% 速度
 
     # 角速度
-    vyaw = max(-max_ang, min(max_ang, curvature * vx * 2.0))
+    # 角速度不要依赖线速度，否则目标在侧前方时 Go2 只会给出极小角速度。
+    vyaw = max(-max_ang, min(max_ang, angle_to_target * 1.5))
+    if abs(vyaw) > 1e-6 and abs(vyaw) < min_ang:
+        vyaw = math.copysign(min(min_ang, max_ang), vyaw)
 
     return vx, vyaw
 
@@ -98,12 +105,10 @@ def find_look_ahead_point(
     start_idx: int,
     look_ahead: float = 0.3,
 ) -> Optional[Tuple[float, float, float]]:
-    """从 start_idx 开始，找到 3D 距离 >= look_ahead 的路径点。"""
+    """从 start_idx 开始，按 XY 平面距离找到前视点。"""
     for i in range(start_idx, len(path)):
         px, py, pz = path[i]
-        dist = np.sqrt(
-            (robot_x - px) ** 2 + (robot_y - py) ** 2 + (robot_z - pz) ** 2
-        )
+        dist = np.hypot(robot_x - px, robot_y - py)
         if dist >= look_ahead:
             return (px, py, pz)
     return path[-1] if path else None
@@ -120,17 +125,21 @@ class MotionController(Node):
         self.declare_parameter('control_frequency', 10.0)
         self.declare_parameter('max_linear_speed', 0.2)
         self.declare_parameter('max_angular_speed', 0.5)
+        self.declare_parameter('min_linear_speed', 0.0)
+        self.declare_parameter('min_angular_speed', 0.0)
         self.declare_parameter('max_acceleration', 0.3)
         self.declare_parameter('goal_tolerance', 0.15)
         self.declare_parameter('max_slope_angle', 30.0)
         self.declare_parameter('slope_speed_factor', 0.5)
-        self.declare_parameter('odom_topic', '/Odometry')
-        self.declare_parameter('cmd_vel_topic', '/cmd_vel')
+        self.declare_parameter('odom_topic', '/Odometry_base_link')
+        self.declare_parameter('cmd_vel_topic', '/cmd_vel_raw')
 
         self.look_ahead = self.get_parameter('look_ahead_distance').value
         ctrl_freq = self.get_parameter('control_frequency').value
         self.max_lin = self.get_parameter('max_linear_speed').value
         self.max_ang = self.get_parameter('max_angular_speed').value
+        self.min_lin = self.get_parameter('min_linear_speed').value
+        self.min_ang = self.get_parameter('min_angular_speed').value
         self.max_acc = self.get_parameter('max_acceleration').value
         self.goal_tol = self.get_parameter('goal_tolerance').value
         self.max_slope_angle = self.get_parameter('max_slope_angle').value
@@ -158,8 +167,8 @@ class MotionController(Node):
         self.create_timer(1.0 / ctrl_freq, self._control_tick)
 
         self.get_logger().info(
-            f'3D 运动控制器已启动: 前视={self.look_ahead}m, '
-            f'最大速度={self.max_lin}m/s, 坡度上限={self.max_slope_angle}°'
+            f'平面运动控制器已启动: 前视={self.look_ahead}m, '
+            f'最大速度={self.max_lin}m/s, 里程计={odom_topic}'
         )
 
     def _on_odom(self, msg: Odometry) -> None:
@@ -185,23 +194,18 @@ class MotionController(Node):
         self._last_time = now
         dt = max(dt, 0.001)
 
-        # 找最近点（3D 距离）
+        # 找最近点（XY 平面距离）
         min_idx = min(
             range(len(self._path)),
             key=lambda i: np.sqrt(
                 (self._x - self._path[i][0]) ** 2
                 + (self._y - self._path[i][1]) ** 2
-                + (self._z - self._path[i][2]) ** 2
             ),
         )
 
-        # 检查是否到达目标（3D 距离）
+        # 检查是否到达目标（XY 平面距离）
         goal_x, goal_y, goal_z = self._path[-1]
-        goal_dist = np.sqrt(
-            (self._x - goal_x) ** 2
-            + (self._y - goal_y) ** 2
-            + (self._z - goal_z) ** 2
-        )
+        goal_dist = np.hypot(self._x - goal_x, self._y - goal_y)
         if goal_dist < self.goal_tol:
             self._publish_stop()
             self.get_logger().info('到达目标，停止')
@@ -214,7 +218,7 @@ class MotionController(Node):
         if target is None:
             target = self._path[-1]
 
-        # Pure Pursuit（3D 版）
+        # Pure Pursuit（XY 平面控制，路径 Z 只保留作地图高度信息）
         vx, vyaw = pure_pursuit_control(
             self._x,
             self._y,
@@ -225,6 +229,8 @@ class MotionController(Node):
             target[2],
             self.max_lin,
             self.max_ang,
+            self.min_lin,
+            self.min_ang,
             self.max_slope_angle,
             self.slope_speed_factor,
         )

@@ -85,6 +85,16 @@ class PathPlanner(Node):
             f'3D 路径规划器已启动，订阅里程计: {self.odom_topic}'
         )
 
+    @staticmethod
+    def _nearest_keypoint_xy(
+        keypoints: np.ndarray, position: Tuple[float, float, float]
+    ) -> int:
+        """按 XY 平面距离查找最近导航关键点，忽略 Z 高度差。"""
+        d2 = (keypoints[:, 0] - position[0]) ** 2 + (
+            keypoints[:, 1] - position[1]
+        ) ** 2
+        return int(np.argmin(d2))
+
     def _on_nav_graph(self, msg: PointCloud2) -> None:
         """接收导航关键点云，重建图结构。"""
         n_points = msg.width
@@ -146,11 +156,7 @@ class PathPlanner(Node):
         if self.nav_graph.tree is None or len(self.nav_graph.keypoints) == 0:
             return
 
-        dist = np.sqrt(
-            (self.current_x - self.goal[0]) ** 2
-            + (self.current_y - self.goal[1]) ** 2
-            + (self.current_z - self.goal[2]) ** 2
-        )
+        dist = np.hypot(self.current_x - self.goal[0], self.current_y - self.goal[1])
         if dist < self.goal_tolerance:
             self.get_logger().info('已到达目标')
             self.goal = None
@@ -180,9 +186,9 @@ class PathPlanner(Node):
         tree = self.nav_graph.tree
         kps = self.nav_graph.keypoints
 
-        # 找最近可通行关键点
-        start_idx = find_nearest_keypoint(tree, start)
-        goal_idx = find_nearest_keypoint(tree, goal)
+        # 平面导航：起点/终点按 XY 最近点投影到导航图，Z 只作为地图高度信息。
+        start_idx = self._nearest_keypoint_xy(kps, start)
+        goal_idx = self._nearest_keypoint_xy(kps, goal)
 
         # 检查可通行性
         if not self.nav_graph.traversable[start_idx]:
@@ -212,7 +218,7 @@ class PathPlanner(Node):
         """发布带 Z 坐标的路径。"""
         msg = Path()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = 'map'
+        msg.header.frame_id = 'camera_init'
         for x, y, z in path_world:
             pose = PoseStamped()
             pose.header = msg.header

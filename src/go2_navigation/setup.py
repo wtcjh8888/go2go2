@@ -11,6 +11,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', [
             'launch/navigation.launch.py',
+            'launch/map_view.launch.py',
             'launch/test_planning.launch.py',
             'launch/test_planning_nolidar.launch.py',
             'launch/test_avoidance.launch.py',
