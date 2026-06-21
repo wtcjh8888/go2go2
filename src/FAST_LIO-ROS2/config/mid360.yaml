@@ -7,7 +7,7 @@
         filter_size_map: 0.5                # 地图点云体素滤波尺寸（米）
         cube_side_length: 1000.0            # 地图保留范围（米），超出该立方体的点将被移除
         runtime_pos_log_enable: false       # 是否在运行时输出位姿日志
-        map_file_path: "/home/w/C206Go2/src/PCD"  # PCD 地图保存路径
+        map_file_path: "/home/w/C206Go2/src/FAST_LIO-ROS2/PCD/scan.pcd"  # PCD 地图保存路径
 
         common:
             lid_topic:  "/livox/lidar"      # 雷达点云话题

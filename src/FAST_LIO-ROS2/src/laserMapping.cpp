@@ -39,6 +39,7 @@
 #include <fstream>
 #include <csignal>
 #include <chrono>
+#include <ctime>
 #include <unistd.h>
 #include <Python.h>
 #include <so3_math.h>
@@ -611,7 +612,21 @@ void publish_map(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub
 void save_to_pcd()
 {
     pcl::PCDWriter pcd_writer;
-    pcd_writer.writeBinary(map_file_path, *pcl_wait_pub);
+    // 在文件名后追加时间戳，避免覆盖已有文件
+    auto now = std::chrono::system_clock::now();
+    auto t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm = *std::localtime(&t);
+    char ts[32];
+    std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm);
+    std::string base = map_file_path;
+    std::string ext = ".pcd";
+    // 如果 map_file_path 本身带 .pcd 后缀，先去掉再拼时间戳
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".pcd") {
+        base = base.substr(0, base.size() - 4);
+    }
+    std::string save_path = base + "_" + ts + ext;
+    RCLCPP_INFO(rclcpp::get_logger("fast_lio"), "Saving PCD to %s", save_path.c_str());
+    pcd_writer.writeBinary(save_path, *pcl_wait_pub);
 }
 
 template<typename T>
